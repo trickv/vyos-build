@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+
+set -u
+set -e
+
+block_device=/dev/sdb
+image=/mnt/image
+squashfs_mount=/mnt/cdsquash
+iso=build/live-image-amd64.hybrid.iso
+squashfs=binary/live/filesystem.squashfs
+version=999
+
+mkdir -p $image
+
+parted --script $block_device mklabel msdos
+parted --script --align optimal $block_device mkpart primary 0% 100%
+mkfs.ext4 $block_device
+parted --script $block_device set 1 boot
+mount $block_device $image
+mkdir -p $image/boot/$version/live-rw
+cp -p $squashfs $image/boot/$version/$version.squashfs
+mount $squashfs_mount $squashfs_mount -t squashfs -o loop,ro
+find $squashfs_mount/boot -maxdepth 1  \( -type f -o -type l \) -exec cp -dp {} $image/boot/$version/ \;
+# left off at build-disk.yml line 108
