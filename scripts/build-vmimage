@@ -3,12 +3,19 @@
 set -u
 set -e
 
+if [ $USER != "root" ]; then
+    echo "Must run as root."
+    exit 1
+fi
+
 block_device=/dev/sdb
 image=/mnt/image
 squashfs_mount=/mnt/cdsquash
 iso=build/live-image-amd64.hybrid.iso
 squashfs=binary/live/filesystem.squashfs
 version=999
+
+apt-get -y install parted
 
 mkdir -p $image
 
