@@ -12,20 +12,41 @@ block_device=/dev/sdb
 image=/mnt/image
 squashfs_mount=/mnt/cdsquash
 iso=build/live-image-amd64.hybrid.iso
-squashfs=binary/live/filesystem.squashfs
+squashfs=build/binary/live/filesystem.squashfs
+install_root=/mnt/install_root
 version=999
+liverw=$image/boot/$version/$version.squashfs
+root_partition=${block_device}1
 
 apt-get -y install parted
 
-mkdir -p $image
+mkdir -p $image $install_root $squashfs_mount
 
 parted --script $block_device mklabel msdos
 parted --script --align optimal $block_device mkpart primary 0% 100%
-mkfs.ext4 $block_device
+mkfs.ext4 $root_partition
+sleep 1 # race condition: the kernel needs to read the new partition table before we try to recognize it
 parted --script $block_device set 1 boot
-mount $block_device $image
-mkdir -p $image/boot/$version/live-rw
+mount $root_partition $image
+mkdir -p $liverw
 cp -p $squashfs $image/boot/$version/$version.squashfs
 mount $squashfs_mount $squashfs_mount -t squashfs -o loop,ro
 find $squashfs_mount/boot -maxdepth 1  \( -type f -o -type l \) -exec cp -dp {} $image/boot/$version/ \;
-# left off at build-disk.yml line 108
+# skip +108 mounting the squashfs a second time, not sure why this needs to be done.
+mount -t overlayfs -o noatime,upperdir=$liverw,lowerdir=$squashfs_mount $install_root
+touch $install_root/opt/vyatta/etc/config/.vyatta-config
+chroot --userspec=root:vyattacfg $install_root cp /opt/vyatta/etc/config.boot.default /opt/vyatta/etc/config/config.boot
+chmod 0775 $install_root/opt/vyatta/etc/config/config.boot
+# skip: +129-159 as these are cloud provider secific
+mkdir $image/boot/grub
+for filesystem in dev proc sys; do
+    mount --bind /$filesystem $install_root/$filesystem
+done
+mount --bind $image $install_root/boot
+chroot $install_root grub-install --no-floppy --root-directory=/boot $block_device
+cp grub.cfg.tmpl $image/boot/grub/grub.cfg
+chmod 0644 $image/boot/grub/grub.cfg
+# skip +186 ec2 ssh key
+echo 'tmpfs /var/run tmpfs nosuid,nodev 0 0' > $install_root/etc/fstab
+echo "Done, just need to unmount"
+mount | grep mnt
